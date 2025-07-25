@@ -1,18 +1,15 @@
 # -*- coding:utf-8 -*-
-import asyncio
 from re import findall
-import aiohttp
 import uvicorn
 from fastapi import FastAPI, Depends, Request
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
-from gtts import gTTS
-from PIL import Image, ImageDraw, ImageTk
+from PIL import Image, ImageDraw
 import random
 import math
 import os
 import requests
-import util
+import api.util
 
 app = FastAPI(docs_url=None, redoc_url=None)
 
@@ -187,10 +184,21 @@ def get_color(weather_code):
             return "#424242"
         
 @app.get("/v1/image")
-def get_image(city: str = "湛江", format: str = "png", request: Request = None):
+def get_image(city: str = "", format: str = "webp", level: str = "city", request: Request = None):
+    # print(request.headers)
     if city == "":
-        city = util.get_ip_city(request.headers.get("X-Real-IP"))[2]
-    weather_code = get_weather_info(city)
+        country, region_name, city = api.util.get_ip_city(request.headers.get("x-forwarded-for"))
+        print("获取IP数据：", country, region_name, city)
+    scan_target = city
+    match level:
+        case "city":
+            scan_target = city
+        case "region":
+            scan_target = region_name
+        case "country":
+            scan_target = country
+    print("获取目标：", scan_target)
+    weather_code = get_weather_info(scan_target)
     color = get_color(weather_code)
     cloud_count = weather_code + 2
     print("云朵数量：", cloud_count)
@@ -203,7 +211,8 @@ def get_image(city: str = "湛江", format: str = "png", request: Request = None
             return FileResponse("/tmp/output/output.webp")
         case "json":
             return {
-                "city": city,
+                "scan_target": scan_target,
+                "level": level,
                 "weather_code": weather_code,
                 "color": color,
                 "cloud_count": cloud_count

@@ -1,2 +1,15 @@
 pillow
 requests
+fastapi
+uvicorn
+SQLAlchemy
+lxml
+pymongo
+aiohttp
+Werkzeug
+pydantic
+python-jose
+passlib
+argon2-cffi
+aiofiles
+ipip-ipdb
