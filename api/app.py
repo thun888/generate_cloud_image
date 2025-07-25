@@ -1,8 +1,20 @@
+# -*- coding:utf-8 -*-
+import asyncio
+from re import findall
+import aiohttp
+import uvicorn
+from fastapi import FastAPI, Depends, Request
+from fastapi.responses import FileResponse
+from fastapi.middleware.cors import CORSMiddleware
+from gtts import gTTS
 from PIL import Image, ImageDraw, ImageTk
 import random
 import math
 import os
 import requests
+import util
+
+app = FastAPI(docs_url=None, redoc_url=None)
 
 # 设置参数
 image_width = 222
@@ -13,6 +25,19 @@ min_dist = 10
 circle_radius = 25
 
 
+origins = [
+    "",
+    "blog.hzchu.top",
+    "hzchu.top",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 def generate_image(cloud_count, color):
     # 读取参数
@@ -54,9 +79,9 @@ def generate_image(cloud_count, color):
         return
 
     # 保存
-    os.makedirs(os.path.join(os.path.dirname(__file__), "output"), exist_ok=True)
-    path_png = os.path.join(os.path.dirname(__file__), "output", "daily.png")
-    path_webp = os.path.join(os.path.dirname(__file__), "output", "daily.webp")
+    os.makedirs(os.path.join("/tmp/", "output"), exist_ok=True)
+    path_png = os.path.join("/tmp/", "output", "output.png")
+    path_webp = os.path.join("/tmp/", "output", "output.webp")
     image.save(path_png, "PNG")
     image.save(path_webp, "WEBP")
 
@@ -160,15 +185,32 @@ def get_color(weather_code):
             return "#525252"
         case _:
             return "#424242"
-
-            
-
-
-
-if __name__ == "__main__":
-    weather_code = get_weather_info("湛江")
+        
+@app.get("/v1/image")
+def get_image(city: str = "湛江", format: str = "png", request: Request = None):
+    if city == "":
+        city = util.get_ip_city(request.headers.get("X-Real-IP"))[2]
+    weather_code = get_weather_info(city)
     color = get_color(weather_code)
     cloud_count = weather_code + 2
     print("云朵数量：", cloud_count)
     print("云朵颜色：", color)
     generate_image(cloud_count, color)
+    match format:
+        case "png":
+            return FileResponse("/tmp/output/output.png")
+        case "webp":
+            return FileResponse("/tmp/output/output.webp")
+        case "json":
+            return {
+                "city": city,
+                "weather_code": weather_code,
+                "color": color,
+                "cloud_count": cloud_count
+            }
+        case _:
+            return FileResponse("/tmp/output/output.png")
+
+
+if __name__ == "__main__":
+        uvicorn.run("main:app", host="0.0.0.0", reload=True)
