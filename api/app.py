@@ -9,6 +9,7 @@ import math
 import io
 import requests
 import api.util
+import time
 
 app = FastAPI(docs_url=None, redoc_url=None)
 
@@ -111,12 +112,12 @@ def get_weather_info(city: str) -> int:
     url = f"https://weatherapi.market.xiaomi.com/wtr-v3/location/city/search?name={city}&locale=zh_cn"
     response = requests.get(url)
     response.raise_for_status()
-    locationKey = response.json()[0]["locationKey"]
-
-    url = f"https://weatherapi.market.xiaomi.com/wtr-v3/location/city/info?locationKey={locationKey}&locale=zh_cn"
-    response = requests.get(url)
-    response.raise_for_status()
     city_info = response.json()[0]
+    # locationKey = response.json()[0]["locationKey"]
+    # 获取城市信息
+    # url = f"https://weatherapi.market.xiaomi.com/wtr-v3/location/city/info?locationKey={locationKey}&locale=zh_cn"
+    # response = requests.get(url)
+    # city_info = response.json()[0]
 
     url = "https://weatherapi.market.xiaomi.com/wtr-v3/weather/all"
     params = {
@@ -128,6 +129,7 @@ def get_weather_info(city: str) -> int:
         "sign": "zUFJoAR2ZVrDy1vF3D07",
         "isGlobal": "false",
         "locale": "zh_cn",
+        "ts": int(time.time())
     }
     response = requests.get(url, params=params)
     response.raise_for_status()
@@ -157,14 +159,15 @@ async def get_image(
     level: str = "city",
     request: Request = None
     ):
-    # 如果没传 city，则尝试从 IP 获取
-    ip = request.headers.get("x-forwarded-for")
-    print("ip:", ip)
+
     if not city:
+        # 如果没传 city，则尝试从 IP 获取
+        ip = request.headers.get("x-forwarded-for")
+        print("ip:", ip)
         country, region_name, city = api.util.get_city_from_ip(ip)
         print("country:", country)
         print("region_name:", region_name)
-        city = city if city != "" else region_name
+        # city = city if city != "" else region_name
         print("city:", city)
     scan_target = {
         "city": city,
