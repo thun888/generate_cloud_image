@@ -1,13 +1,12 @@
 # -*- coding:utf-8 -*-
-from re import findall
 import uvicorn
-from fastapi import FastAPI, Depends, Request
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, Request, HTTPException
+from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image, ImageDraw
 import random
 import math
-import os
+import io
 import requests
 import api.util
 
@@ -20,7 +19,6 @@ point_count = 5
 max_dist = 40
 min_dist = 10
 circle_radius = 25
-
 
 origins = [
     "",
@@ -36,53 +34,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-def generate_image(cloud_count, color):
-    # 读取参数
-    w = image_width
-    h = image_height
-    n = point_count
-    maxd = max_dist
-    mind = min_dist
-    rad = circle_radius
-
-    # 参数合法性检查
-    if any(v < 0 for v in (w, h, cloud_count, n, maxd, mind, rad)):
-        print("参数错误", "请输入非负整数参数。")
-        return
-    if cloud_count < 1 or n < 1:
-        print("参数错误", "云朵数量和点的个数至少为 1。")
-        return
-    if mind > maxd:
-        print("参数错误", "最小距离不能大于最大距离。")
-        return
-
-    # 新建透明图像
-    image = Image.new("RGBA", (image_width, image_height), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(image)
-
-    # 为每一朵云生成一组点并绘制圆
-    failed = False
-    for ci in range(cloud_count):
-        pts = _generate_points(w, h, n, maxd, mind, rad)
-        if pts is None:
-            failed = True
-            break
-        for (x, y) in pts:
-            bbox = [x - rad, y - rad, x + rad, y + rad]
-            draw.ellipse(bbox, fill=color)
-
-    if failed:
-        print("生成失败",f"第 {ci+1} 朵云无法满足距离约束。\n请调整参数后再试。")
-        return
-
-    # 保存
-    os.makedirs(os.path.join("/tmp/", "output"), exist_ok=True)
-    path_png = os.path.join("/tmp/", "output", "output.png")
-    path_webp = os.path.join("/tmp/", "output", "output.webp")
-    image.save(path_png, "PNG")
-    image.save(path_webp, "WEBP")
-
-
 def _generate_points(w, h, n, maxd, mind, rad, max_attempts=1000):
     """
     在画布(w,h)内生成 n 个点，满足：
@@ -91,7 +42,6 @@ def _generate_points(w, h, n, maxd, mind, rad, max_attempts=1000):
     失败时返回 None。
     """
     for attempt in range(max_attempts):
-        # 随机选簇中心 C（保证圆不超界）
         cx = random.uniform(rad, w - rad)
         cy = random.uniform(rad, h - rad)
         cluster_r = maxd / 2.0
@@ -121,23 +71,54 @@ def _generate_points(w, h, n, maxd, mind, rad, max_attempts=1000):
 
     return None
 
+def generate_image_bytes(cloud_count: int, color: str, fmt: str = "PNG") -> io.BytesIO:
+    """
+    生成指定数量、指定颜色的“云朵”图片，返回 BytesIO。
 
-def get_weather_info(city):
-    # 获取城市
+    参数:
+      cloud_count: 云朵数量
+      color: 云朵填充颜色（PIL 能识别的格式）
+      fmt: "PNG" or "WEBP"
+    """
+    # 参数合法性检查
+    if any(v < 0 for v in (image_width, image_height, cloud_count, point_count, max_dist, min_dist, circle_radius)):
+        raise ValueError("请输入非负整数参数")
+    if cloud_count < 1 or point_count < 1:
+        raise ValueError("云朵数量和点的个数至少为 1")
+    if min_dist > max_dist:
+        raise ValueError("最小距离不能大于最大距离")
+
+    # 新建透明图像
+    img = Image.new("RGBA", (image_width, image_height), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+
+    # 为每一朵云生成一组点并绘制圆
+    for ci in range(cloud_count):
+        pts = _generate_points(image_width, image_height, point_count, max_dist, min_dist, circle_radius)
+        if pts is None:
+            raise RuntimeError(f"第 {ci+1} 朵云无法满足距离约束，请调整参数。")
+        for (x, y) in pts:
+            bbox = [x - circle_radius, y - circle_radius, x + circle_radius, y + circle_radius]
+            draw.ellipse(bbox, fill=color)
+
+    # 保存到内存
+    buf = io.BytesIO()
+    img.save(buf, format=fmt)
+    buf.seek(0)
+    return buf
+
+def get_weather_info(city: str) -> int:
     url = f"https://weatherapi.market.xiaomi.com/wtr-v3/location/city/search?name={city}&locale=zh_cn"
     response = requests.get(url)
+    response.raise_for_status()
     locationKey = response.json()[0]["locationKey"]
-    # 获取城市信息
+
     url = f"https://weatherapi.market.xiaomi.com/wtr-v3/location/city/info?locationKey={locationKey}&locale=zh_cn"
     response = requests.get(url)
+    response.raise_for_status()
     city_info = response.json()[0]
 
-    print("城市名称:", city_info["name"])
-    print("隶属:", city_info["affiliation"])
-
-    # 获取天气信息
     url = "https://weatherapi.market.xiaomi.com/wtr-v3/weather/all"
-    # thanks to classisland
     params = {
         "latitude": city_info["latitude"],
         "longitude": city_info["longitude"],
@@ -149,77 +130,72 @@ def get_weather_info(city):
         "locale": "zh_cn",
     }
     response = requests.get(url, params=params)
-    # print(response.json())
+    response.raise_for_status()
     weather_code = int(response.json()["current"]["weather"])
-    # 参考 https://weather.easyapi.com/code.html
     return weather_code
 
-def get_color(weather_code):
-    match weather_code:
-        case 0:
-            return "#dbdbdb"
-        case 1:
-            return "#d2d2d2"
-        case 2:
-            return "#c8c8c8"
-        case 3:
-            return "#bfbfbf"
-        case 4:
-            return "#b6b6b6"
-        case 5:
-            return "#adadad"
-        case 6:
-            return "#a4a4a4"
-        case 7:
-            return "#949494"
-        case 8:
-            return "#838383"
-        case 9:
-            return "#737373"
-        case 10:
-            return "#626262"
-        case 11:
-            return "#525252"
-        case _:
-            return "#424242"
-        
+def get_color(weather_code: int) -> str:
+    return {
+        0: "#dbdbdb",
+        1: "#d2d2d2", 
+        2: "#c8c8c8", 
+        3: "#bfbfbf",
+        4: "#b6b6b6", 
+        5: "#adadad", 
+        6: "#a4a4a4", 
+        7: "#949494",
+        8: "#838383", 
+        9: "#737373", 
+        10: "#626262", 
+        11: "#525252"
+    }.get(weather_code, "#424242")
+
 @app.get("/v1/image")
-def get_image(city: str = "", format: str = "webp", level: str = "city", request: Request = None):
-    # print(request.headers)
-    if city == "":
+async def get_image(
+    city: str = "",
+    format: str = "webp",
+    level: str = "city",
+    request: Request = None
+):
+    # 如果没传 city，则尝试从 IP 获取
+    if not city:
         country, region_name, city = api.util.get_ip_city(request.headers.get("x-forwarded-for"))
-        print("获取IP数据：", country, region_name, city)
-    scan_target = city
-    match level:
-        case "city":
-            scan_target = city
-        case "region":
-            scan_target = region_name
-        case "country":
-            scan_target = country
-    print("获取目标：", scan_target)
-    weather_code = get_weather_info(scan_target)
+    scan_target = {
+        "city": city,
+        "region": region_name,
+        "country": country
+    }.get(level, city)
+
+    # 获取天气和配色
+    try:
+        weather_code = get_weather_info(scan_target)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail="无法获取天气信息")
     color = get_color(weather_code)
     cloud_count = weather_code + 2
-    print("云朵数量：", cloud_count)
-    print("云朵颜色：", color)
-    generate_image(cloud_count, color)
-    match format:
-        case "png":
-            return FileResponse("/tmp/output/output.png")
-        case "webp":
-            return FileResponse("/tmp/output/output.webp")
-        case "json":
-            return {
-                "scan_target": scan_target,
-                "level": level,
-                "weather_code": weather_code,
-                "color": color,
-                "cloud_count": cloud_count
-            }
-        case _:
-            return FileResponse("/tmp/output/output.png")
 
+    # 返回 JSON 或 图片
+    if format == "json":
+        return JSONResponse({
+            "scan_target": scan_target,
+            "level": level,
+            "weather_code": weather_code,
+            "color": color,
+            "cloud_count": cloud_count
+        })
+    
+    # 直接生成内存图片
+    fmt = format.upper()
+    if fmt not in ("PNG", "WEBP"):
+        fmt = "PNG"
+
+    try:
+        img_io = generate_image_bytes(cloud_count, color, fmt)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    media_type = "image/png" if fmt == "PNG" else "image/webp"
+    return StreamingResponse(img_io, media_type=media_type)
 
 if __name__ == "__main__":
-        uvicorn.run("main:app", host="0.0.0.0", reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", reload=True)
