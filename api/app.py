@@ -156,10 +156,16 @@ async def get_image(
     format: str = "webp",
     level: str = "city",
     request: Request = None
-):
+    ):
     # 如果没传 city，则尝试从 IP 获取
+    ip = request.headers.get("x-forwarded-for")
+    print("ip:", ip)
     if not city:
-        country, region_name, city = api.util.get_ip_city(request.headers.get("x-forwarded-for"))
+        country, region_name, city = api.util.get_city_from_ip(ip)
+        print("country:", country)
+        print("region_name:", region_name)
+        city = city if city != "" else region_name
+        print("city:", city)
     scan_target = {
         "city": city,
         "region": region_name,
@@ -168,6 +174,7 @@ async def get_image(
 
     # 获取天气和配色
     try:
+        print("scan_target:", scan_target)
         weather_code = get_weather_info(scan_target)
     except Exception as e:
         raise HTTPException(status_code=502, detail="无法获取天气信息")

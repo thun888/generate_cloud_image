@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>前端云朵生成示例</title>
+  <style>
+    body { font-family: sans-serif; padding: 20px; }
+    #canvas { border: 1px solid #ccc; }
+    .controls { margin-bottom: 10px; }
+    .controls label { margin-right: 10px; }
+  </style>
+</head>
+<body>
+
+  <div class="controls">
+    <label>画布宽度: <input id="inputWidth" type="number" value="222" /></label>
+    <label>高度: <input id="inputHeight" type="number" value="640" /></label>
+    <label>云朵数量: <input id="inputCloudCount" type="number" value="3" /></label>
+    <label>点数(每朵): <input id="inputPointCount" type="number" value="5" /></label>
+    <label>最小距: <input id="inputMinDist" type="number" value="10" /></label>
+    <label>最大距: <input id="inputMaxDist" type="number" value="40" /></label>
+    <label>半径: <input id="inputRadius" type="number" value="25" /></label>
+    <label>颜色: <input id="inputColor" type="color" value="#525252" /></label>
+    <button id="btnDraw">生成并绘制</button>
+    <button id="btnSave">导出 PNG</button>
+  </div>
+
+  <canvas id="canvas"></canvas>
+
+  <script>
+    // 在 (w,h) 画布内生成 n 个点，要求：
+    // - 两点间距离 ∈ [mind, maxd]
+    // - 距离画布边缘 ≥ rad
+    // 失败返回 null
+    function generatePoints(w, h, n, maxd, mind, rad, maxAttempts = 1000) {
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        // 先随机一个中心，让圆都能在边界内
+        let cx = randRange(rad, w - rad);
+        let cy = randRange(rad, h - rad);
+        let clusterR = maxd / 2;
+
+        // 极坐标生成 n 个点
+        let pts = [];
+        for (let i = 0; i < n; i++) {
+          let theta = Math.random() * 2 * Math.PI;
+          let r = clusterR * Math.sqrt(Math.random());
+          let x = cx + r * Math.cos(theta);
+          let y = cy + r * Math.sin(theta);
+          pts.push({x, y});
+        }
+
+        // 检查两两距离约束
+        let ok = true;
+        for (let i = 0; i < n && ok; i++) {
+          for (let j = i + 1; j < n; j++) {
+            let dx = pts[i].x - pts[j].x;
+            let dy = pts[i].y - pts[j].y;
+            let d = Math.hypot(dx, dy);
+            if (d < mind || d > maxd) {
+              ok = false;
+              break;
+            }
+          }
+        }
+
+        if (ok) {
+          // 再附加检查：每个点离边界 ≥ rad
+          let inBounds = pts.every(p => p.x >= rad && p.x <= w - rad && p.y >= rad && p.y <= h - rad);
+          if (inBounds) return pts;
+        }
+      }
+      return null;
+    }
+
+    // 获取 [min, max] 随机浮点
+    function randRange(min, max) {
+      return min + Math.random() * (max - min);
+    }
+
+    // 主画图函数
+    function drawClouds() {
+      const w = +document.getElementById("inputWidth").value;
+      const h = +document.getElementById("inputHeight").value;
+      const cloudCount = +document.getElementById("inputCloudCount").value;
+      const pointCount = +document.getElementById("inputPointCount").value;
+      const minDist = +document.getElementById("inputMinDist").value;
+      const maxDist = +document.getElementById("inputMaxDist").value;
+      const rad = +document.getElementById("inputRadius").value;
+      const color = document.getElementById("inputColor").value;
+
+      const canvas = document.getElementById("canvas");
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext("2d");
+
+      // 透明背景
+      ctx.clearRect(0, 0, w, h);
+
+      for (let ci = 0; ci < cloudCount; ci++) {
+        const pts = generatePoints(w, h, pointCount, maxDist, minDist, rad);
+        if (!pts) {
+          alert(`第 ${ci+1} 朵云生成失败，请调整参数！`);
+          return;
+        }
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        for (let p of pts) {
+          ctx.moveTo(p.x + rad, p.y);
+          ctx.arc(p.x, p.y, rad, 0, 2 * Math.PI);
+        }
+        ctx.fill();
+      }
+    }
+
+    // 导出 PNG
+    function saveImage() {
+      const canvas = document.getElementById("canvas");
+      const url = canvas.toDataURL("image/png");
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "clouds.png";
+      a.click();
+    }
+
+    // 绑定按钮
+    document.getElementById("btnDraw").addEventListener("click", drawClouds);
+    document.getElementById("btnSave").addEventListener("click", saveImage);
+
+    // 页面加载后先绘制一次
+    window.onload = drawClouds;
+  </script>
+
+</body>
+</html>
