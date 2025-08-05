@@ -3,7 +3,7 @@ import random
 import math
 import os
 import requests
-
+import time
 # 设置参数
 image_width = 222
 image_height = 640  
@@ -104,11 +104,12 @@ def get_weather_info(city):
     # 获取城市
     url = f"https://weatherapi.market.xiaomi.com/wtr-v3/location/city/search?name={city}&locale=zh_cn"
     response = requests.get(url)
-    locationKey = response.json()[0]["locationKey"]
-    # 获取城市信息
-    url = f"https://weatherapi.market.xiaomi.com/wtr-v3/location/city/info?locationKey={locationKey}&locale=zh_cn"
-    response = requests.get(url)
     city_info = response.json()[0]
+    # locationKey = response.json()[0]["locationKey"]
+    # 获取城市信息
+    # url = f"https://weatherapi.market.xiaomi.com/wtr-v3/location/city/info?locationKey={locationKey}&locale=zh_cn"
+    # response = requests.get(url)
+    # city_info = response.json()[0]
 
     print("城市名称:", city_info["name"])
     print("隶属:", city_info["affiliation"])
@@ -123,8 +124,9 @@ def get_weather_info(city):
         "days": 15,
         "appKey": "weather20151024",
         "sign": "zUFJoAR2ZVrDy1vF3D07",
-        "isGlobal": "false",
+        "isGlobal": "false", # 是否使用国际标准
         "locale": "zh_cn",
+        "ts": int(time.time())
     }
     response = requests.get(url, params=params)
     # print(response.json())
