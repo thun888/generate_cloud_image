@@ -135,7 +135,8 @@ def get_weather_info(city: str) -> int:
     response.raise_for_status()
     print(response.json())
     weather_code = int(response.json()["current"]["weather"])
-
+    if weather_code >= 300:
+        weather_code -= 300
     return weather_code
 
 def get_color(weather_code: int) -> str:
