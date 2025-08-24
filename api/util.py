@@ -5,11 +5,16 @@ db = ipdb.City("ipipfree.ipdb")
 
 def get_city_from_ip(ip):
     ipinfo = db.find_map(ip, "CN")
+    print(ipinfo)
     country = ipinfo["country_name"]
     region_name = ipinfo["region_name"]
     city = ipinfo["city_name"]
-    if city == "":
-        _ , _ , city = get_city_from_ip_online(ip)
+    if not city or city == "":
+        country_online , region_name_online , city_online = get_city_from_ip_online(ip)
+        if city_online:
+            city = city_online
+        if region_name_online:
+            region_name = region_name_online
     return country, region_name, city
 
 
@@ -18,6 +23,7 @@ def get_city_from_ip_online(ip):
     response = requests.get(url)
     if response.status_code == 200:
         data = response.json()
+        print(data)
         return data["country_name"], data["region"], data["city"]
     else:
         return None, None, None

@@ -133,7 +133,9 @@ def get_weather_info(city: str) -> int:
     }
     response = requests.get(url, params=params)
     response.raise_for_status()
+    print(response.json())
     weather_code = int(response.json()["current"]["weather"])
+
     return weather_code
 
 def get_color(weather_code: int) -> str:
